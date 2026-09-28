@@ -18,6 +18,8 @@ renders the result as a browsable report plus a print-ready executive summary.
 - [Service management](#service-management)
 - [Troubleshooting](#troubleshooting)
 - [Uninstall](#uninstall)
+- [Support](#support)
+- [License](#license)
 
 ---
 
@@ -285,3 +287,16 @@ when you're ready.
 
 See [BUILD.md](BUILD.md) — covers the universal Python wheel, native builds for
 macOS/Windows/Linux, the macOS universal2 requirement, and the Linux glibc floor.
+
+---
+
+## Support
+
+This project is community-supported on a best-effort basis and is not covered
+by Palo Alto Networks TAC. See [SUPPORT.md](SUPPORT.md). Report problems via
+[GitHub Issues](https://github.com/PaloAltoNetworks/bpa-portal/issues).
+
+## License
+
+ISC. See [LICENSE](LICENSE). Bundled third-party components are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
