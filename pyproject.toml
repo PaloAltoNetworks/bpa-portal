@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bpa-portal"
+version = "1.1.0"
+description = "Local web portal for Palo Alto Networks Best Practice Assessments"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "LicenseRef-Proprietary"
+authors = [{ name = "Palo Alto Networks" }]
+classifiers = [
+  "Private :: Do Not Upload",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "flask>=3.0",
+  "waitress>=3.0",
+  "requests>=2.31",
+  "platformdirs>=4.0",
+  "werkzeug>=3.0",
+]
+
+[project.scripts]
+bpa-portal = "bpa_portal.launcher:main"
+
+[project.gui-scripts]
+bpa-portal-gui = "bpa_portal.launcher:main"
+
+[tool.setuptools]
+# Pure Python, no compiled extensions -> one wheel tagged py3-none-any that
+# installs on macOS (Intel + Apple Silicon), Windows and Linux, any architecture.
+zip-safe = false
+
+# List the package explicitly. Auto-discovery walks subdirectories and would
+# treat templates/ and static/ as namespace packages, which they are not —
+# they are package data, declared below.
+packages = ["bpa_portal", "bpa_portal.templates", "bpa_portal.static"]
+
+[tool.setuptools.package-data]
+bpa_portal = ["templates/*.html", "static/*"]

@@ -1,0 +1,128 @@
+name: Release
+
+# PyInstaller cannot cross-compile, so each native artifact is built on its own
+# runner. The universal wheel is built once and works everywhere.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp on artifacts"
+        required: false
+        default: "1.1.0"
+
+env:
+  BPA_VERSION: ${{ github.event.inputs.version || '1.1.0' }}
+
+jobs:
+  # ---- One artifact that installs on every OS and architecture ----
+  wheel:
+    name: Universal wheel (py3-none-any)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip build
+      - run: python -m build --outdir dist
+      - name: Assert the wheel is platform independent
+        run: |
+          set -e
+          whl="$(ls dist/*.whl)"
+          echo "Built: $whl"
+          case "$whl" in
+            *-py3-none-any.whl) echo "OK: universal" ;;
+            *) echo "FAIL: not universal"; exit 1 ;;
+          esac
+      - name: Verify it installs and imports on a clean interpreter
+        run: |
+          python -m venv /tmp/v
+          /tmp/v/bin/pip install dist/*.whl
+          cd /tmp && /tmp/v/bin/python -c "from bpa_portal.app import app; print('routes:', len(list(app.url_map.iter_rules())))"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bpa-portal-wheel
+          path: dist/*
+
+  # ---- Native desktop binaries, one per OS ----
+  macos:
+    name: macOS .dmg (universal2)
+    runs-on: macos-13   # Intel runner; universal2 cross-build needs the x86_64 slice
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install universal2 Python
+        # setup-python's macOS builds are universal2, which is what lets
+        # PyInstaller emit a binary that runs on BOTH Apple Silicon and Intel.
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: ./build.sh
+      - name: Verify the bundle is universal2
+        run: |
+          set -e
+          bin="dist/BPA Portal.app/Contents/MacOS/BPA Portal"
+          archs="$(lipo -archs "$bin")"
+          echo "archs: $archs"
+          echo "$archs" | grep -q x86_64 || { echo "FAIL: missing x86_64 (Intel Macs cannot run this)"; exit 1; }
+          echo "$archs" | grep -q arm64  || { echo "FAIL: missing arm64"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bpa-portal-macos
+          path: release/*.dmg
+
+  windows:
+    name: Windows .zip (x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: .\build.ps1
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bpa-portal-windows
+          path: release/*.zip
+
+  linux:
+    name: Linux .tar.gz (x86_64, old-glibc)
+    runs-on: ubuntu-latest
+    # Build inside an old-glibc image so the binary also runs on RHEL 8,
+    # Ubuntu 20.04, Debian 10 etc. Building on the bare runner would raise the
+    # glibc floor to the runner's own version and break older customer distros.
+    container: quay.io/pypa/manylinux_2_28_x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          set -e
+          /opt/python/cp311-cp311/bin/python -m venv .venv
+          BPA_VENV=.venv ./build.sh
+      - name: Report the glibc floor
+        run: |
+          ldd --version | head -1
+          echo "Binary requires at least this glibc; manylinux_2_28 => glibc 2.28 (RHEL 8, Ubuntu 20.04+)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bpa-portal-linux
+          path: release/*.tar.gz
+
+  publish:
+    name: Attach everything to the GitHub Release
+    needs: [wheel, macos, windows, linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - run: find artifacts -type f | sort
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true

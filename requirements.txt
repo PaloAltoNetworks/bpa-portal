@@ -1,0 +1,8 @@
+# Runtime dependencies. Kept in sync with [project.dependencies] in
+# pyproject.toml, which is the source of truth for the packaged wheel.
+# All are pure-Python and support macOS, Windows and Linux on any architecture.
+flask>=3.0
+waitress>=3.0
+requests>=2.31
+platformdirs>=4.0
+werkzeug>=3.0

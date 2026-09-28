@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}BPA Portal{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="hero-row">
+    <div>
+      <p class="eyebrow">Best Practice Assessment</p>
+      <h1>Run an assessment</h1>
+      <p class="meta">BPA credentials are sent to Palo Alto Networks per run and never stored on disk.</p>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>New run</h2>
+  <form id="run-form" enctype="multipart/form-data">
+    <label>Customer Name
+      <input type="text" name="customer_name" placeholder="e.g. Acme Corp" required>
+    </label>
+    <label>Client ID
+      <input type="text" name="client_id" placeholder="user@<tsg>.iam.panserviceaccount.com" required>
+    </label>
+    <label>Client Secret
+      <input type="password" name="client_secret" autocomplete="off" required>
+    </label>
+    <label>Config XML
+      <input type="file" name="config_file" accept=".xml" required>
+    </label>
+    <button type="submit">Run assessment</button>
+  </form>
+  <div id="progress" class="progress hidden">
+    <h3>Progress</h3>
+    <pre id="progress-log"></pre>
+  </div>
+</section>
+
+<section class="card">
+  <h2>History</h2>
+  {% if reports %}
+  <table class="history">
+    <thead>
+      <tr><th>Started</th><th>Customer</th><th>TSG</th><th>File</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for r in reports %}
+      <tr>
+        <td>{{ r.created_at.split('.')[0].replace('T', ' ') }}Z</td>
+        <td>{{ r.customer_name or '—' }}</td>
+        <td>{{ r.tsg_id or '—' }}</td>
+        <td>{{ r.filename or '—' }}</td>
+        <td><span class="status status-{{ r.status|lower }}">{{ r.status }}</span>
+          {% if r.error %}<div class="err-detail" title="{{ r.error }}">{{ r.error[:80] }}{% if r.error|length > 80 %}…{% endif %}</div>{% endif %}
+        </td>
+        <td class="actions">
+          {% if r.status == 'COMPLETED' %}
+            <a href="{{ url_for('view_report', report_id=r.id) }}">View</a>
+            <a href="{{ url_for('executive_report', report_id=r.id) }}">Executive</a>
+            <a href="{{ url_for('download_report', report_id=r.id) }}">JSON</a>
+          {% endif %}
+          <form method="post" action="{{ url_for('delete_report', report_id=r.id) }}" onsubmit="return confirm('Delete this report?');" style="display:inline">
+            <button type="submit" class="link-btn">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="meta">No reports yet.</p>
+  {% endif %}
+</section>
+
+<script>
+const form = document.getElementById('run-form');
+const progress = document.getElementById('progress');
+const log = document.getElementById('progress-log');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  progress.classList.remove('hidden');
+  log.textContent = 'Submitting…';
+  const fd = new FormData(form);
+  const resp = await fetch('{{ url_for("run_assessment") }}', { method: 'POST', body: fd });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({error: 'Submission failed.'}));
+    log.textContent = 'Error: ' + (err.error || resp.statusText);
+    return;
+  }
+  const { job_id } = await resp.json();
+  pollJob(job_id);
+});
+
+async function pollJob(jobId) {
+  while (true) {
+    const r = await fetch(`/jobs/${jobId}`);
+    if (!r.ok) { log.textContent += '\nLost connection to job.'; return; }
+    const data = await r.json();
+    log.textContent = data.steps.join('\n') || 'Starting…';
+    log.scrollTop = log.scrollHeight;
+    if (data.status === 'COMPLETED' || data.status === 'FAILED') {
+      log.textContent += `\n\nFinal status: ${data.status}`;
+      setTimeout(() => location.reload(), 1500);
+      return;
+    }
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}
+</script>
+{% endblock %}

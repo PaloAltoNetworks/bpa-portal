@@ -1,0 +1,12 @@
+{% macro panw_logo(variant='dark', size='md') %}
+  {% set wordmark_color = '#FA582D' %}
+  <span class="panw-logo panw-logo--{{ size }}">
+    <img class="panw-mark" src="{{ url_for('static', filename='panw-logo.png') }}" alt="">
+    <svg class="panw-wordmark" viewBox="0 0 220 56" aria-label="Palo Alto Networks">
+      <g font-family="'Inter','Helvetica Neue',Arial,sans-serif" fill="{{ wordmark_color }}">
+        <text x="0" y="28" font-size="22" font-weight="700" letter-spacing="-0.5">paloalto</text>
+        <text x="0" y="48" font-size="13" font-weight="600" letter-spacing="3.2">NETWORKS</text>
+      </g>
+    </svg>
+  </span>
+{% endmacro %}

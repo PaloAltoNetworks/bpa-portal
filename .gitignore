@@ -1,0 +1,38 @@
+# --- Secrets: never commit service-account credentials ---
+bpa.csv
+*.credentials
+.env
+
+# --- Build outputs ---
+build/
+dist/
+release/
+*.egg-info/
+*.whl
+*.tar.gz
+
+# --- Virtualenvs (platform-specific, never portable) ---
+.venv/
+venv/
+bpa/
+env/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.so
+
+# --- Local runtime data ---
+data/
+*.db
+portal-url.txt
+
+# --- Customer sample input ---
+config.xml
+
+# --- OS noise ---
+.DS_Store
+Thumbs.db
+
+# --- Local tool settings ---
+.claude/

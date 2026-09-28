@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block title %}BPA Report — {{ meta.tsg_id or meta.id[:8] }}{% endblock %}
+{% block content %}
+
+{% set sev_classes = {'Critical':'sev-critical','Warning':'sev-warning','Informational':'sev-info'} %}
+
+<section class="hero">
+  <div class="hero-row">
+    <div>
+      <p class="eyebrow">Best Practice Assessment</p>
+      <h1>BPA Report{% if meta.customer_name %} — {{ meta.customer_name }}{% endif %}</h1>
+      <p class="meta">
+        {% if meta.customer_name %}<strong>{{ meta.customer_name }}</strong> · {% endif %}
+        TSG <strong>{{ meta.tsg_id or '—' }}</strong> ·
+        {{ meta.filename or '—' }} ·
+        {{ meta.created_at.split('.')[0].replace('T',' ') }}Z
+      </p>
+    </div>
+    <div class="hero-actions">
+      <a class="btn btn-ghost" href="{{ url_for('index') }}">← All reports</a>
+      <a class="btn" href="{{ url_for('executive_report', report_id=meta.id) }}">Executive summary</a>
+      <a class="btn btn-secondary" href="{{ url_for('download_report', report_id=meta.id) }}">Download JSON</a>
+      <a class="btn btn-link" href="{{ url_for('raw_report', report_id=meta.id) }}" target="_blank">Open raw</a>
+    </div>
+  </div>
+
+  <div class="env-grid">
+    <div><span class="env-k">Platform</span><span class="env-v">{{ summary.info.platform or '—' }}</span></div>
+    <div><span class="env-k">PAN-OS</span><span class="env-v">{{ summary.info.PanOS_version or summary.info.panos_version or '—' }}</span></div>
+    <div><span class="env-k">BPA version</span><span class="env-v">{{ summary.info.bpa_version or '—' }}</span></div>
+    <div><span class="env-k">Prisma Access</span><span class="env-v">{{ 'Yes' if summary.info.prisma_access else 'No' }}{% if summary.info.prisma_access_version %} · {{ summary.info.prisma_access_version }}{% endif %}</span></div>
+    <div><span class="env-k">Device-groups</span><span class="env-v">{{ summary.info['device-group']|length if summary.info['device-group'] else 0 }}</span></div>
+    <div><span class="env-k">Template-stacks</span><span class="env-v">{{ summary.info['template-stack']|length if summary.info['template-stack'] else 0 }}</span></div>
+    <div><span class="env-k">Generated</span><span class="env-v">{{ summary.info.last_updated_time or '—' }}</span></div>
+    <div><span class="env-k">Device IP</span><span class="env-v">{{ summary.info.device_ip_address or '—' }}</span></div>
+  </div>
+</section>
+
+<section class="summary-cards">
+  <div class="kcard">
+    <span class="k-label">Total checks</span>
+    <span class="k-num">{{ '{:,}'.format(summary.totals.checks) }}</span>
+  </div>
+  <div class="kcard k-pass">
+    <span class="k-label">Passed</span>
+    <span class="k-num">{{ '{:,}'.format(summary.totals.passed) }}</span>
+  </div>
+  <div class="kcard k-fail">
+    <span class="k-label">Failed</span>
+    <span class="k-num">{{ '{:,}'.format(summary.totals.failed) }}</span>
+  </div>
+  <div class="kcard k-crit">
+    <span class="k-label">Critical failed</span>
+    <span class="k-num">{{ '{:,}'.format(summary.totals.by_severity_failed.get('Critical', 0)) }}</span>
+  </div>
+  <div class="kcard k-warn">
+    <span class="k-label">Warning failed</span>
+    <span class="k-num">{{ '{:,}'.format(summary.totals.by_severity_failed.get('Warning', 0)) }}</span>
+  </div>
+  <div class="kcard k-info">
+    <span class="k-label">Informational failed</span>
+    <span class="k-num">{{ '{:,}'.format(summary.totals.by_severity_failed.get('Informational', 0)) }}</span>
+  </div>
+</section>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="overview">Overview</button>
+  <button class="tab" data-tab="findings">Findings</button>
+  <button class="tab" data-tab="adoption">Adoption</button>
+</nav>
+
+<section class="tab-panel active" id="tab-overview">
+  <div class="card">
+    <h2>By category</h2>
+    <table class="data-table">
+      <thead><tr><th>Category</th><th>Total</th><th>Passed</th><th>Failed</th><th>Critical</th><th>Warning</th><th>Informational</th></tr></thead>
+      <tbody>
+        {% for cat in summary.category_order %}
+          {% set s = summary.category_stats[cat] %}
+          <tr>
+            <td><strong>{{ s.label }}</strong></td>
+            <td>{{ '{:,}'.format(s.total) }}</td>
+            <td class="num-pass">{{ '{:,}'.format(s.passed) }}</td>
+            <td class="num-fail">{{ '{:,}'.format(s.failed) }}</td>
+            <td>{{ s.by_severity.get('Critical', 0) }}</td>
+            <td>{{ s.by_severity.get('Warning', 0) }}</td>
+            <td>{{ s.by_severity.get('Informational', 0) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Top failing checks <span class="muted">(by affected items)</span></h2>
+    <ul class="finding-list">
+      {% for f in summary.top_findings %}
+        <li class="finding">
+          <div class="finding-head">
+            <span class="sev {{ sev_classes.get(f.severity, '') }}">{{ f.severity }}</span>
+            <span class="finding-name">{{ f.check_name }}</span>
+            <span class="affected-count">{{ f.affected_count }} affected</span>
+          </div>
+          <div class="finding-meta">
+            <span class="chip">{{ f.category }}</span>
+            <span class="chip subtle">{{ f.family }}</span>
+            {% if f.check_id %}<span class="chip subtle">ID {{ f.check_id }}</span>{% endif %}
+          </div>
+          {% if f.messages %}
+            <p class="finding-msg">{{ f.messages[0] }}</p>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+
+<section class="tab-panel" id="tab-findings">
+  <div class="card">
+    <div class="filters">
+      <label>Severity
+        <select id="sev-filter">
+          <option value="">All</option>
+          <option value="Critical">Critical</option>
+          <option value="Warning">Warning</option>
+          <option value="Informational">Informational</option>
+        </select>
+      </label>
+      <label>Search
+        <input type="search" id="finding-search" placeholder="check name, message, item…">
+      </label>
+    </div>
+
+    {% for cat in summary.category_order %}
+      {% set cdata = summary.findings[cat] %}
+      <details class="cat-block" open>
+        <summary class="cat-summary">
+          <span>{{ cdata.label }}</span>
+          <span class="muted">{{ cdata.families|length }} families</span>
+        </summary>
+        {% for family, fdata in cdata.families.items() %}
+          {% if fdata.failed > 0 %}
+          <details class="family-block">
+            <summary class="family-summary">
+              <span>{{ fdata.label }}</span>
+              <span class="muted">{{ fdata.failed }} failing of {{ fdata.total }}</span>
+            </summary>
+            <ul class="finding-list">
+              {% for b in fdata.buckets if b.affected_count > 0 %}
+                <li class="finding"
+                    data-severity="{{ b.severity }}"
+                    data-search="{{ (b.check_name or '')|lower }} {{ (b.messages|join(' '))|lower }}">
+                  <div class="finding-head">
+                    <span class="sev {{ sev_classes.get(b.severity, '') }}">{{ b.severity }}</span>
+                    <span class="finding-name">{{ b.check_name }}</span>
+                    <span class="affected-count">{{ b.affected_count }} affected</span>
+                  </div>
+                  {% if b.check_id %}
+                    <div class="finding-meta"><span class="chip subtle">ID {{ b.check_id }}</span></div>
+                  {% endif %}
+                  {% for msg in b.messages %}
+                    <p class="finding-msg">{{ msg }}</p>
+                  {% endfor %}
+                  {% if b.remediation %}
+                    <p class="finding-remediation"><strong>Remediation:</strong> {{ b.remediation }}</p>
+                  {% endif %}
+                  {% if b.affected_items %}
+                  <details class="affected">
+                    <summary>Show affected items ({{ b.affected_items|length }})</summary>
+                    <ul class="affected-items">
+                      {% for it in b.affected_items[:200] %}
+                        <li>
+                          <span class="item-name">{{ it.name }}</span>
+                          {% if it.location %}<span class="muted"> · {{ it.location }}</span>{% endif %}
+                          {% if it.template_name %}<span class="muted"> · {{ it.template_name }}</span>{% endif %}
+                          {% if it.rulebase %}<span class="muted"> · {{ it.rulebase }}</span>{% endif %}
+                        </li>
+                      {% endfor %}
+                      {% if b.affected_items|length > 200 %}
+                        <li class="muted">… and {{ b.affected_items|length - 200 }} more</li>
+                      {% endif %}
+                    </ul>
+                  </details>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          </details>
+          {% endif %}
+        {% endfor %}
+      </details>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="tab-panel" id="tab-adoption">
+  <div class="card">
+    <h2>Security rule adoption by location</h2>
+    {% if summary.adoption_rows %}
+    <div class="table-scroll">
+      <table class="data-table adoption">
+        <thead>
+          <tr>
+            <th>Location</th><th>Rules</th><th>Allow</th><th>Deny</th>
+            <th>Log fwd %</th>
+            <th>AV %</th><th>Spyware %</th><th>Vuln %</th>
+            <th>URL %</th><th>WildFire %</th><th>DNS Sec %</th>
+            <th>Cred Theft %</th><th>App-ID %</th><th>User-ID %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in summary.adoption_rows %}
+          <tr>
+            <td><strong>{{ r.location }}</strong></td>
+            <td>{{ r.total_rules or 0 }}</td>
+            <td>{{ r.allow or 0 }}</td>
+            <td>{{ r.deny or 0 }}</td>
+            <td>{{ '%.1f'|format(r.log_forwarding or 0) }}</td>
+            <td>{{ '%.1f'|format(r.antivirus or 0) }}</td>
+            <td>{{ '%.1f'|format(r.anti_spyware or 0) }}</td>
+            <td>{{ '%.1f'|format(r.vuln or 0) }}</td>
+            <td>{{ '%.1f'|format(r.url or 0) }}</td>
+            <td>{{ '%.1f'|format(r.wildfire or 0) }}</td>
+            <td>{{ '%.1f'|format(r.dns_security or 0) }}</td>
+            <td>{{ '%.1f'|format(r.credential_theft or 0) }}</td>
+            <td>{{ '%.1f'|format(r.app_id or 0) }}</td>
+            <td>{{ '%.1f'|format(r.user_id or 0) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="muted">No adoption metrics found in this report.</p>
+    {% endif %}
+  </div>
+</section>
+
+<script>
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+const sevFilter = document.getElementById('sev-filter');
+const search = document.getElementById('finding-search');
+function applyFilters() {
+  const sev = sevFilter.value;
+  const q = (search.value || '').toLowerCase().trim();
+  document.querySelectorAll('#tab-findings .finding').forEach(el => {
+    const matchSev = !sev || el.dataset.severity === sev;
+    const matchQ = !q || (el.dataset.search || '').includes(q);
+    el.style.display = (matchSev && matchQ) ? '' : 'none';
+  });
+}
+sevFilter.addEventListener('change', applyFilters);
+search.addEventListener('input', applyFilters);
+</script>
+{% endblock %}

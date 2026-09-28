@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BPA Executive Summary — {{ meta.tsg_id or meta.id[:8] }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='print.css') }}">
+  <script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
+</head>
+{% from "_logo.html" import panw_logo %}
+<body class="exec">
+<div class="exec-toolbar no-print">
+  <a class="btn btn-ghost" href="{{ url_for('view_report', report_id=meta.id) }}">← Back to report</a>
+  <button class="btn" onclick="window.print()">Print / Save as PDF</button>
+</div>
+
+<div class="exec-doc">
+
+<!-- COVER -->
+<section class="exec-page exec-cover">
+  <div class="cover-logo">{{ panw_logo(size='cover') }}</div>
+  <p class="exec-eyebrow">Best Practice Assessment</p>
+  <h1 class="cover-title">Executive Summary</h1>
+  {% if meta.customer_name %}
+    <p class="cover-customer">Prepared for <strong>{{ meta.customer_name }}</strong></p>
+  {% endif %}
+  <p class="cover-sub">Security posture review and prioritized recommendations</p>
+  <div class="cover-meta">
+    {% if meta.customer_name %}
+    <div><span class="ck">Customer</span><span class="cv">{{ meta.customer_name }}</span></div>
+    {% endif %}
+    <div><span class="ck">TSG</span><span class="cv">{{ meta.tsg_id or '—' }}</span></div>
+    <div><span class="ck">Configuration</span><span class="cv">{{ meta.filename or '—' }}</span></div>
+    <div><span class="ck">Platform</span><span class="cv">{{ summary.info.platform or '—' }} · PAN-OS {{ summary.info.PanOS_version or summary.info.panos_version or '—' }}</span></div>
+    <div><span class="ck">Prisma Access</span><span class="cv">{{ 'Yes' if summary.info.prisma_access else 'No' }}{% if summary.info.prisma_access_version %} · {{ summary.info.prisma_access_version }}{% endif %}</span></div>
+    <div><span class="ck">Generated</span><span class="cv">{{ meta.created_at.split('.')[0].replace('T',' ') }}Z</span></div>
+    <div><span class="ck">BPA version</span><span class="cv">{{ summary.info.bpa_version or '—' }}</span></div>
+  </div>
+  <div class="cover-footer">Prepared by Palo Alto Networks BPA · Confidential</div>
+</section>
+
+<!-- KEY FIGURES -->
+<section class="exec-page">
+  <div class="page-header">
+    <div class="page-logo">{{ panw_logo(size='header') }}</div>
+    <span class="page-tag">{% if meta.customer_name %}{{ meta.customer_name }} · {% endif %}BPA Executive Summary</span>
+  </div>
+  <h2 class="exec-h2">At-a-glance</h2>
+  <p class="exec-lede">
+    The configuration was assessed against {{ '{:,}'.format(summary.totals.checks) }} best-practice checks.
+    <strong>{{ '{:,}'.format(summary.totals.passed) }}</strong> passed
+    ({{ summary.pass_rate }}%), and
+    <strong>{{ '{:,}'.format(summary.totals.failed) }}</strong> failed —
+    of which {{ summary.totals.by_severity_failed.get('Critical', 0) }} are
+    <span class="sev sev-critical">Critical</span>,
+    {{ summary.totals.by_severity_failed.get('Warning', 0) }} are
+    <span class="sev sev-warning">Warning</span>, and
+    {{ summary.totals.by_severity_failed.get('Informational', 0) }} are
+    <span class="sev sev-info">Informational</span>.
+  </p>
+
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-num">{{ summary.pass_rate }}<span class="kpi-unit">%</span></div><div class="kpi-lbl">Pass rate</div></div>
+    <div class="kpi kpi-crit"><div class="kpi-num">{{ '{:,}'.format(summary.totals.by_severity_failed.get('Critical', 0)) }}</div><div class="kpi-lbl">Critical failed</div></div>
+    <div class="kpi kpi-warn"><div class="kpi-num">{{ '{:,}'.format(summary.totals.by_severity_failed.get('Warning', 0)) }}</div><div class="kpi-lbl">Warning failed</div></div>
+    <div class="kpi kpi-info"><div class="kpi-num">{{ '{:,}'.format(summary.totals.by_severity_failed.get('Informational', 0)) }}</div><div class="kpi-lbl">Informational failed</div></div>
+  </div>
+
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3 class="chart-title">Pass vs fail</h3>
+      <div class="chart-wrap"><canvas id="chartPass"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3 class="chart-title">Failures by severity</h3>
+      <div class="chart-wrap"><canvas id="chartSev"></canvas></div>
+    </div>
+  </div>
+
+  <div class="chart-card chart-wide">
+    <h3 class="chart-title">Failures by category</h3>
+    <div class="chart-wrap chart-wide-wrap"><canvas id="chartCat"></canvas></div>
+  </div>
+</section>
+
+<!-- TOP FINDINGS -->
+<section class="exec-page">
+  <div class="page-header">
+    <div class="page-logo">{{ panw_logo(size='header') }}</div>
+    <span class="page-tag">{% if meta.customer_name %}{{ meta.customer_name }} · {% endif %}BPA Executive Summary</span>
+  </div>
+  <h2 class="exec-h2">Top failing checks</h2>
+  <p class="exec-meta">Aggregated across the entire configuration, ranked by number of affected items.</p>
+
+  <div class="chart-card chart-wide">
+    <div class="chart-wrap chart-tall"><canvas id="chartTop"></canvas></div>
+  </div>
+
+  <ol class="exec-findings">
+    {% for f in summary.top_failing_checks %}
+    <li class="exec-finding">
+      <div class="ef-head">
+        <span class="ef-num">{{ loop.index }}</span>
+        <span class="sev {{ {'Critical':'sev-critical','Warning':'sev-warning','Informational':'sev-info'}.get(f.severity,'') }}">{{ f.severity }}</span>
+        <span class="ef-name">{{ f.check_name }}</span>
+        <span class="ef-count">{{ '{:,}'.format(f.affected_count) }} affected</span>
+      </div>
+      <div class="ef-meta">
+        {% for c in f.categories %}<span class="chip subtle">{{ c }}</span>{% endfor %}
+      </div>
+      {% if f.messages %}
+        <p class="ef-msg">{{ f.messages[0] }}</p>
+      {% endif %}
+      {% if f.remediation %}
+        <p class="ef-rem"><strong>Remediation:</strong> {{ f.remediation }}</p>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+
+<!-- ADOPTION -->
+{% if summary.adoption_avg %}
+<section class="exec-page">
+  <div class="page-header">
+    <div class="page-logo">{{ panw_logo(size='header') }}</div>
+    <span class="page-tag">{% if meta.customer_name %}{{ meta.customer_name }} · {% endif %}BPA Executive Summary</span>
+  </div>
+  <h2 class="exec-h2">Security profile adoption</h2>
+  <p class="exec-meta">Average adoption percentage of each protection profile across all device-group locations.</p>
+  <div class="chart-card chart-wide">
+    <div class="chart-wrap chart-tall"><canvas id="chartAdoption"></canvas></div>
+  </div>
+
+  <h3 class="exec-h3">Adoption by location</h3>
+  <div class="table-scroll">
+    <table class="data-table adoption print-table">
+      <thead>
+        <tr>
+          <th>Location</th><th>Rules</th>
+          <th>AV %</th><th>Spyware %</th><th>Vuln %</th>
+          <th>URL %</th><th>WildFire %</th><th>DNS Sec %</th>
+          <th>Cred Theft %</th><th>App-ID %</th><th>User-ID %</th><th>Log fwd %</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in summary.adoption_rows %}
+        <tr>
+          <td><strong>{{ r.location }}</strong></td>
+          <td>{{ r.total_rules or 0 }}</td>
+          <td>{{ '%.1f'|format(r.antivirus or 0) }}</td>
+          <td>{{ '%.1f'|format(r.anti_spyware or 0) }}</td>
+          <td>{{ '%.1f'|format(r.vuln or 0) }}</td>
+          <td>{{ '%.1f'|format(r.url or 0) }}</td>
+          <td>{{ '%.1f'|format(r.wildfire or 0) }}</td>
+          <td>{{ '%.1f'|format(r.dns_security or 0) }}</td>
+          <td>{{ '%.1f'|format(r.credential_theft or 0) }}</td>
+          <td>{{ '%.1f'|format(r.app_id or 0) }}</td>
+          <td>{{ '%.1f'|format(r.user_id or 0) }}</td>
+          <td>{{ '%.1f'|format(r.log_forwarding or 0) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<!-- CATEGORY BREAKDOWN -->
+<section class="exec-page">
+  <div class="page-header">
+    <div class="page-logo">{{ panw_logo(size='header') }}</div>
+    <span class="page-tag">{% if meta.customer_name %}{{ meta.customer_name }} · {% endif %}BPA Executive Summary</span>
+  </div>
+  <h2 class="exec-h2">Category breakdown</h2>
+  <table class="data-table print-table">
+    <thead>
+      <tr><th>Category</th><th>Total</th><th>Passed</th><th>Failed</th><th>Critical</th><th>Warning</th><th>Informational</th></tr>
+    </thead>
+    <tbody>
+      {% for cat in summary.category_order %}
+        {% set s = summary.category_stats[cat] %}
+        <tr>
+          <td><strong>{{ s.label }}</strong></td>
+          <td>{{ '{:,}'.format(s.total) }}</td>
+          <td class="num-pass">{{ '{:,}'.format(s.passed) }}</td>
+          <td class="num-fail">{{ '{:,}'.format(s.failed) }}</td>
+          <td>{{ s.by_severity.get('Critical', 0) }}</td>
+          <td>{{ s.by_severity.get('Warning', 0) }}</td>
+          <td>{{ s.by_severity.get('Informational', 0) }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<footer class="exec-footer">
+  <div class="footer-logo">{{ panw_logo(size='footer') }}</div>
+  <span>Generated by the BPA Portal · {{ meta.created_at.split('.')[0].replace('T',' ') }}Z · {{ summary.info.bpa_version or '' }}</span>
+</footer>
+
+</div>
+
+<script>
+const PAN_ORANGE = '#fa582d';
+const PAN_ORANGE_DIM = '#c64626';
+const COLORS = {
+  pass: '#16a34a',
+  crit: '#dc2626',
+  warn: '#d97706',
+  info: '#2563eb',
+};
+
+const txt = getComputedStyle(document.body).color || '#1a1a1a';
+const grid = 'rgba(127,127,127,.15)';
+
+Chart.defaults.color = '#2a2f45';
+Chart.defaults.font.family = '"Inter", -apple-system, BlinkMacSystemFont, sans-serif';
+Chart.defaults.font.size = 12;
+
+new Chart(document.getElementById('chartPass'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Passed', 'Failed'],
+    datasets: [{
+      data: [{{ summary.totals.passed }}, {{ summary.totals.failed }}],
+      backgroundColor: [COLORS.pass, COLORS.crit],
+      borderWidth: 0,
+    }],
+  },
+  options: {
+    plugins: { legend: { position: 'bottom' } },
+    cutout: '62%',
+    responsive: true, maintainAspectRatio: false,
+  }
+});
+
+new Chart(document.getElementById('chartSev'), {
+  type: 'bar',
+  data: {
+    labels: ['Critical', 'Warning', 'Informational'],
+    datasets: [{
+      label: 'Failed',
+      data: [
+        {{ summary.totals.by_severity_failed.get('Critical', 0) }},
+        {{ summary.totals.by_severity_failed.get('Warning', 0) }},
+        {{ summary.totals.by_severity_failed.get('Informational', 0) }}
+      ],
+      backgroundColor: [COLORS.crit, COLORS.warn, COLORS.info],
+      borderRadius: 4,
+    }],
+  },
+  options: {
+    plugins: { legend: { display: false } },
+    scales: { y: { beginAtZero: true, grid: { color: grid } }, x: { grid: { display: false } } },
+    responsive: true, maintainAspectRatio: false,
+  }
+});
+
+new Chart(document.getElementById('chartCat'), {
+  type: 'bar',
+  data: {
+    labels: [{% for c in summary.category_order %}'{{ summary.category_stats[c].label }}'{% if not loop.last %},{% endif %}{% endfor %}],
+    datasets: [
+      { label: 'Critical', backgroundColor: COLORS.crit, data: [{% for c in summary.category_order %}{{ summary.category_stats[c].by_severity.get('Critical', 0) }}{% if not loop.last %},{% endif %}{% endfor %}] },
+      { label: 'Warning', backgroundColor: COLORS.warn, data: [{% for c in summary.category_order %}{{ summary.category_stats[c].by_severity.get('Warning', 0) }}{% if not loop.last %},{% endif %}{% endfor %}] },
+      { label: 'Informational', backgroundColor: COLORS.info, data: [{% for c in summary.category_order %}{{ summary.category_stats[c].by_severity.get('Informational', 0) }}{% if not loop.last %},{% endif %}{% endfor %}] },
+    ],
+  },
+  options: {
+    plugins: { legend: { position: 'bottom' } },
+    scales: {
+      x: { stacked: true, grid: { display: false } },
+      y: { stacked: true, beginAtZero: true, grid: { color: grid } },
+    },
+    responsive: true, maintainAspectRatio: false,
+  }
+});
+
+function wrapLabel(text, maxLen, maxLines) {
+  const words = String(text).split(/\s+/);
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    const candidate = cur ? cur + ' ' + w : w;
+    if (candidate.length > maxLen && cur) {
+      lines.push(cur);
+      cur = w;
+    } else {
+      cur = candidate;
+    }
+    if (lines.length >= maxLines) break;
+  }
+  if (cur && lines.length < maxLines) lines.push(cur);
+  if (lines.length === maxLines) {
+    const last = lines[maxLines - 1];
+    const total = lines.join(' ').length;
+    if (total < text.length) lines[maxLines - 1] = (last.length > maxLen - 1 ? last.slice(0, maxLen - 1) : last) + '…';
+  }
+  return lines;
+}
+
+new Chart(document.getElementById('chartTop'), {
+  type: 'bar',
+  data: {
+    labels: [{% for f in summary.top_failing_checks %}{{ f.check_name|tojson }}{% if not loop.last %},{% endif %}{% endfor %}],
+    datasets: [{
+      label: 'Affected',
+      backgroundColor: [{% for f in summary.top_failing_checks %}'{{ {'Critical':'#dc2626','Warning':'#d97706','Informational':'#2563eb'}.get(f.severity,'#6b7280') }}'{% if not loop.last %},{% endif %}{% endfor %}],
+      data: [{% for f in summary.top_failing_checks %}{{ f.affected_count }}{% if not loop.last %},{% endif %}{% endfor %}],
+      borderRadius: 4,
+    }],
+  },
+  options: {
+    indexAxis: 'y',
+    layout: { padding: { left: 4, right: 16 } },
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { title: items => items[0].label } },
+    },
+    scales: {
+      x: { beginAtZero: true, grid: { color: grid } },
+      y: {
+        grid: { display: false },
+        ticks: {
+          autoSkip: false,
+          font: { size: 11 },
+          callback: function(value) { return wrapLabel(this.getLabelForValue(value), 38, 3); },
+        },
+      },
+    },
+    responsive: true, maintainAspectRatio: false,
+  }
+});
+
+{% if summary.adoption_avg %}
+new Chart(document.getElementById('chartAdoption'), {
+  type: 'bar',
+  data: {
+    labels: [{% for a in summary.adoption_avg %}'{{ a.label }}'{% if not loop.last %},{% endif %}{% endfor %}],
+    datasets: [{
+      label: 'Adoption %',
+      data: [{% for a in summary.adoption_avg %}{{ a.value }}{% if not loop.last %},{% endif %}{% endfor %}],
+      backgroundColor: PAN_ORANGE,
+      borderRadius: 4,
+    }],
+  },
+  options: {
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero: true, max: 100, grid: { color: grid }, ticks: { callback: v => v + '%' } },
+      x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 45, minRotation: 30 } },
+    },
+    responsive: true, maintainAspectRatio: false,
+  }
+});
+{% endif %}
+</script>
+</body>
+</html>
